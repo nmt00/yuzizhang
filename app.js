@@ -2,8 +2,10 @@
   'use strict';
 
   const C = window.QZCore;
+  const S = window.QZSync;
   // 沿用旧版存储键：升级为玉子账后，已有账目不会丢失
   const DATA_KEY = 'qingzhang.data.v1';
+  const CLOUD_KEY = 'yuzizhang.cloud.v1';
   const VIEWS = ['home', 'reports', 'budget', 'settings'];
   const VIEW_TITLES = {
     home: '玉子账 · 我的账本',
@@ -13,7 +15,7 @@
   };
   const ICON_ALIAS = { home: 'house', gift: 'social' };
 
-  if (!C) {
+  if (!C || !S) {
     document.body.innerHTML = '<p style="padding:40px;font-family:sans-serif">应用加载失败，请刷新页面重试。</p>';
     return;
   }
@@ -30,6 +32,36 @@
     } catch (error) {
       console.warn('读取本地数据失败', error);
       return C.createEmptyData();
+    }
+  }
+
+  function loadCloudState() {
+    const fallback = {
+      serverUrl: window.YUZI_CLOUD_URL || '',
+      token: '',
+      email: '',
+      userId: '',
+      lastRevision: 0,
+      lastSyncedAt: null,
+      lastError: ''
+    };
+    try {
+      const raw = localStorage.getItem(CLOUD_KEY);
+      if (!raw) return fallback;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return fallback;
+      return {
+        serverUrl: typeof parsed.serverUrl === 'string' ? parsed.serverUrl : fallback.serverUrl,
+        token: typeof parsed.token === 'string' ? parsed.token : '',
+        email: typeof parsed.email === 'string' ? parsed.email : '',
+        userId: typeof parsed.userId === 'string' ? parsed.userId : '',
+        lastRevision: Number(parsed.lastRevision) || 0,
+        lastSyncedAt: typeof parsed.lastSyncedAt === 'string' ? parsed.lastSyncedAt : null,
+        lastError: typeof parsed.lastError === 'string' ? parsed.lastError : ''
+      };
+    } catch (error) {
+      console.warn('读取云同步状态失败', error);
+      return fallback;
     }
   }
 
@@ -53,7 +85,11 @@
     confirmAction: null,
     installPrompt: null,
     toastTimer: null,
-    toastActionHandler: null
+    toastActionHandler: null,
+    cloud: loadCloudState(),
+    cloudAuthMode: 'login',
+    cloudSyncing: false,
+    cloudTimer: null
   };
 
   const refs = {
@@ -94,6 +130,19 @@
     sortDialog: $('#sortDialog'),
     sortList: $('#sortList'),
     resetCategoryOrder: $('#resetCategoryOrder'),
+    cloudDialog: $('#cloudDialog'),
+    cloudForm: $('#cloudAuthForm'),
+    cloudTabs: $('#cloudDialog .cloud-tabs'),
+    cloudServerInput: $('#cloudServerInput'),
+    cloudEmailInput: $('#cloudEmailInput'),
+    cloudPasswordInput: $('#cloudPasswordInput'),
+    cloudError: $('#cloudError'),
+    cloudSubmit: $('#cloudSubmit'),
+    cloudAccountPanel: $('#cloudAccountPanel'),
+    cloudAccountEmail: $('#cloudAccountEmail'),
+    cloudAccountStatus: $('#cloudAccountStatus'),
+    cloudSyncNow: $('#cloudSyncNow'),
+    cloudLogout: $('#cloudLogout'),
     confirmDialog: $('#confirmDialog'),
     confirmIcon: $('#confirmIcon'),
     confirmTitle: $('#confirmTitle'),
@@ -225,7 +274,10 @@
       '</span>' +
       '<span class="brand-copy"><span class="brand-name">玉子账</span><span class="brand-tag">猫咪手账本</span></span>' +
       '</a>' +
-      '<span class="local-pill">' + icon('shield') + '仅本机</span>' +
+      '<span class="local-pill' + (cloudLoggedIn() ? ' cloud-on' : '') + '">' +
+      icon(cloudLoggedIn() ? 'cloud' : 'shield') +
+      (cloudLoggedIn() ? '云同步' : '仅本机') +
+      '</span>' +
       '</header>'
     );
   }
@@ -933,6 +985,7 @@
       '</div>' +
       '<p class="privacy-note">' + pawIcon() + '自定义分类会出现在记账、时间轴、统计和分类预算中，也会随备份一起导出。</p>' +
       '</section>' +
+      renderCloudSection() +
       '<section class="settings-section">' +
       '<p class="settings-section-title">账本管理</p>' +
       '<div class="settings-card">' +
@@ -957,7 +1010,7 @@
       icon('chevron-right', 'setting-chevron') +
       '</button>' +
       '</div>' +
-      '<p class="privacy-note">' + icon('shield') + '玉子账没有服务器。账目保存在当前浏览器的本地存储中，不会上传。清理浏览器数据会一并删除，请定期导出备份。</p>' +
+      '<p class="privacy-note">' + icon('shield') + '不登录云同步时，账目只保存在当前浏览器的本地存储中，不会上传；清理浏览器数据会一并删除，请定期导出备份。</p>' +
       '</section>' +
       '<section class="settings-section">' +
       '<p class="settings-section-title">安装到桌面</p>' +
@@ -980,7 +1033,7 @@
       icon('chevron-right', 'setting-chevron') +
       '</button></div>' +
       '</section>' +
-      '<footer class="app-footer">玉子账 <span class="version-pill">v1.3.2</span><br>本机占用 ' +
+      '<footer class="app-footer">玉子账 <span class="version-pill">v1.4.0</span><br>本机占用 ' +
       C.formatFileSize(storageSize) +
       ' · 猫猫陪你记好每一笔</footer>'
     );
@@ -1016,14 +1069,320 @@
 
   /* ---------- Persistence ---------- */
 
-  function saveData() {
+  function saveData(options) {
+    const opts = options || {};
     try {
       localStorage.setItem(DATA_KEY, JSON.stringify(state.data));
+      if (!opts.skipSync) scheduleCloudSync();
       return true;
     } catch (error) {
       console.warn('保存失败', error);
       showToast('保存失败：浏览器存储不可用或空间不足', { type: 'error', duration: 5000 });
       return false;
+    }
+  }
+
+  /* ---------- Cloud sync ---------- */
+
+  function cloudLoggedIn() {
+    return Boolean(state.cloud && state.cloud.token && state.cloud.serverUrl);
+  }
+
+  function saveCloudState() {
+    try {
+      localStorage.setItem(CLOUD_KEY, JSON.stringify(state.cloud));
+    } catch (error) {
+      console.warn('保存云同步状态失败', error);
+    }
+  }
+
+  function normalizeCloudServer(value) {
+    let url = String(value == null ? '' : value).trim();
+    if (!url) return '';
+    if (!/^https?:\/\//i.test(url)) {
+      const localHost = /^(localhost|127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(url);
+      url = (localHost ? 'http://' : 'https://') + url;
+    }
+    url = url.replace(/\/+$/, '');
+    if (!/^https?:\/\/[^/\s]+/i.test(url)) return '';
+    if (location.protocol === 'https:' && /^http:\/\//i.test(url)) {
+      const host = url.replace(/^http:\/\//i, '').split('/')[0].split(':')[0];
+      if (host !== '127.0.0.1' && host !== 'localhost') return '';
+    }
+    return url;
+  }
+
+  async function cloudApi(path, options) {
+    const opts = options || {};
+    const headers = { Accept: 'application/json' };
+    if (opts.auth !== false && state.cloud.token) {
+      headers.Authorization = 'Bearer ' + state.cloud.token;
+    }
+    if (opts.body) headers['Content-Type'] = 'application/json';
+    let response;
+    try {
+      response = await fetch(state.cloud.serverUrl.replace(/\/+$/, '') + path, {
+        method: opts.method || 'GET',
+        headers: headers,
+        body: opts.body ? JSON.stringify(opts.body) : undefined
+      });
+    } catch (error) {
+      const networkError = new Error('无法连接同步服务器，请检查地址和网络');
+      networkError.network = true;
+      throw networkError;
+    }
+    let payload = null;
+    const text = await response.text();
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch (error) {
+      payload = null;
+    }
+    if (!response.ok) {
+      const apiError = new Error((payload && payload.message) || '同步服务器返回 HTTP ' + response.status);
+      apiError.status = response.status;
+      apiError.code = payload && payload.error;
+      apiError.data = payload;
+      throw apiError;
+    }
+    return payload;
+  }
+
+  function formatCloudTime(value) {
+    if (!value) return '还没有同步过';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '刚刚同步';
+    return (
+      date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) +
+      ' ' +
+      date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    );
+  }
+
+  function renderCloudSection() {
+    const active = cloudLoggedIn();
+    const email = active ? state.cloud.email : '';
+    const desc = active
+      ? '已连接 ' + escapeHtml(email) + ' · ' + formatCloudTime(state.cloud.lastSyncedAt)
+      : '登录后可在多台设备之间合并账目';
+    return (
+      '<section class="settings-section">' +
+      '<p class="settings-section-title">云同步 <span class="settings-section-note">可选</span></p>' +
+      '<div class="settings-card">' +
+      '<button class="setting-row" type="button" data-action="open-cloud">' +
+      '<span class="setting-icon cloud-setting-icon">' + icon('cloud') + '</span>' +
+      '<span class="setting-main"><span class="setting-title">云同步</span><span class="setting-desc">' +
+      desc +
+      '</span></span>' +
+      '<span class="cloud-state' + (active ? ' on' : '') + '">' +
+      (active ? '已连接' : '未开启') +
+      '</span>' +
+      icon('chevron-right', 'setting-chevron') +
+      '</button>' +
+      '</div>' +
+      '<p class="privacy-note">' +
+      icon('shield') +
+      (active
+        ? '账目会先在本机保存，再通过你填写的服务器同步；删除记录会用墓碑标记，避免在另一台设备上复活。'
+        : '云同步是可选的。不登录时账目仍只保存在本机，不会上传到任何服务器。') +
+      '</p>' +
+      '</section>'
+    );
+  }
+
+  function updateCloudDialog() {
+    if (!refs.cloudDialog) return;
+    const active = cloudLoggedIn();
+    refs.cloudAccountPanel.hidden = !active;
+    refs.cloudForm.hidden = active;
+    if (active) {
+      refs.cloudAccountEmail.textContent = state.cloud.email;
+      refs.cloudAccountStatus.textContent = state.cloudSyncing
+        ? '正在同步…'
+        : state.cloud.lastError
+          ? '同步失败：' + state.cloud.lastError
+          : '上次同步 · ' + formatCloudTime(state.cloud.lastSyncedAt);
+      refs.cloudSyncNow.disabled = state.cloudSyncing;
+      refs.cloudSyncNow.textContent = state.cloudSyncing ? '同步中…' : '立即同步';
+    } else {
+      refs.cloudServerInput.value = state.cloud.serverUrl || window.YUZI_CLOUD_URL || '';
+      refs.cloudEmailInput.value = state.cloud.email || '';
+      refs.cloudTabs.querySelectorAll('[data-mode]').forEach(function (button) {
+        button.classList.toggle('active', button.dataset.mode === state.cloudAuthMode);
+      });
+      refs.cloudSubmit.textContent =
+        state.cloudAuthMode === 'register' ? '注册并同步' : '登录并同步';
+      refs.cloudPasswordInput.autocomplete =
+        state.cloudAuthMode === 'register' ? 'new-password' : 'current-password';
+    }
+  }
+
+  function openCloudDialog() {
+    refs.cloudError.hidden = true;
+    refs.cloudPasswordInput.value = '';
+    updateCloudDialog();
+    openDialog(refs.cloudDialog);
+  }
+
+  function setCloudAuthMode(mode) {
+    state.cloudAuthMode = mode === 'register' ? 'register' : 'login';
+    refs.cloudError.hidden = true;
+    updateCloudDialog();
+  }
+
+  async function submitCloudAuth(event) {
+    event.preventDefault();
+    refs.cloudError.hidden = true;
+    const serverUrl = normalizeCloudServer(refs.cloudServerInput.value);
+    const email = refs.cloudEmailInput.value.trim();
+    const password = refs.cloudPasswordInput.value;
+    if (!serverUrl) {
+      refs.cloudError.textContent =
+        location.protocol === 'https:'
+          ? '请输入 HTTPS 同步服务器地址（本机调试可用 http://127.0.0.1:8787）。'
+          : '请输入有效的同步服务器地址，例如 https://api.example.com。';
+      refs.cloudError.hidden = false;
+      return;
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      refs.cloudError.textContent = '请输入有效邮箱。';
+      refs.cloudError.hidden = false;
+      return;
+    }
+    if (password.length < 8) {
+      refs.cloudError.textContent = '密码至少 8 位。';
+      refs.cloudError.hidden = false;
+      return;
+    }
+    refs.cloudSubmit.disabled = true;
+    const previousText = refs.cloudSubmit.textContent;
+    refs.cloudSubmit.textContent = state.cloudAuthMode === 'register' ? '注册中…' : '登录中…';
+    state.cloud.serverUrl = serverUrl;
+    try {
+      const result = await cloudApi('/api/auth/' + state.cloudAuthMode, {
+        method: 'POST',
+        auth: false,
+        body: { email: email, password: password }
+      });
+      state.cloud.token = result.token;
+      state.cloud.email = result.user.email;
+      state.cloud.userId = result.user.id;
+      state.cloud.lastRevision = 0;
+      state.cloud.lastSyncedAt = null;
+      state.cloud.lastError = '';
+      saveCloudState();
+      refs.cloudPasswordInput.value = '';
+      updateCloudDialog();
+      await syncCloud({ manual: true });
+      if (state.view === 'settings') render();
+      showToast(state.cloudAuthMode === 'register' ? '账号已创建，开始同步' : '已登录云同步');
+    } catch (error) {
+      refs.cloudError.textContent = error.message || '登录失败';
+      refs.cloudError.hidden = false;
+    } finally {
+      refs.cloudSubmit.disabled = false;
+      refs.cloudSubmit.textContent = previousText;
+    }
+  }
+
+  function logoutCloud() {
+    state.cloud.token = '';
+    state.cloud.email = '';
+    state.cloud.userId = '';
+    state.cloud.lastRevision = 0;
+    state.cloud.lastSyncedAt = null;
+    state.cloud.lastError = '';
+    saveCloudState();
+    updateCloudDialog();
+    if (state.view === 'settings') render();
+    showToast('已退出云账号，账目仍保留在本机');
+  }
+
+  function scheduleCloudSync() {
+    if (!cloudLoggedIn()) return;
+    if (state.cloudTimer) window.clearTimeout(state.cloudTimer);
+    state.cloudTimer = window.setTimeout(function () {
+      state.cloudTimer = null;
+      syncCloud();
+    }, 1800);
+  }
+
+  async function syncCloud(options) {
+    const opts = options || {};
+    if (!cloudLoggedIn()) {
+      if (opts.manual) openCloudDialog();
+      return;
+    }
+    if (state.cloudSyncing) return;
+    if (navigator.onLine === false) {
+      if (opts.manual) showToast('当前没有网络，恢复联网后会自动同步', { type: 'warning' });
+      return;
+    }
+    state.cloudSyncing = true;
+    state.cloud.lastError = '';
+    updateCloudDialog();
+    if (state.view === 'settings') render();
+    try {
+      const remotePayload = await cloudApi('/api/sync');
+      let remote = remotePayload && remotePayload.data ? C.normalizeData(remotePayload.data) : null;
+      let merged = remote ? S.mergeData(state.data, remote) : state.data;
+      let baseRevision = Number(remotePayload && remotePayload.revision) || 0;
+      let result = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const remoteFingerprint = remote ? S.fingerprint(remote) : null;
+        const mergedFingerprint = S.fingerprint(merged);
+        if (remoteFingerprint === mergedFingerprint) {
+          result = { revision: baseRevision, data: remote || merged, pushed: false };
+          break;
+        }
+        try {
+          const put = await cloudApi('/api/sync', {
+            method: 'PUT',
+            body: { baseRevision: baseRevision, data: merged }
+          });
+          result = {
+            revision: Number(put.revision) || baseRevision + 1,
+            data: merged,
+            pushed: true
+          };
+          break;
+        } catch (error) {
+          if (error.status !== 409 || !error.data) throw error;
+          remote = error.data.data ? C.normalizeData(error.data.data) : null;
+          baseRevision = Number(error.data.revision) || baseRevision;
+          merged = remote ? S.mergeData(merged, remote) : merged;
+        }
+      }
+      if (!result) throw new Error('同步冲突次数过多，请稍后重试');
+      state.data = C.normalizeData(result.data);
+      saveData({ skipSync: true });
+      state.cloud.lastRevision = result.revision;
+      state.cloud.lastSyncedAt = C.nowIso();
+      state.cloud.lastError = '';
+      saveCloudState();
+      render();
+      updateCloudDialog();
+      if (opts.manual) showToast(result.pushed ? '已同步到云端' : '已是最新');
+    } catch (error) {
+      state.cloud.lastError = error.message || '同步失败';
+      saveCloudState();
+      if (state.view === 'settings') render();
+      updateCloudDialog();
+      if (error.status === 401) {
+        state.cloud.token = '';
+        state.cloud.email = '';
+        state.cloud.userId = '';
+        saveCloudState();
+        updateCloudDialog();
+        if (opts.manual) openCloudDialog();
+        showToast('登录已过期，请重新登录云同步', { type: 'warning' });
+      } else if (opts.manual) {
+        showToast(state.cloud.lastError, { type: 'error' });
+      }
+    } finally {
+      state.cloudSyncing = false;
+      updateCloudDialog();
+      if (state.view === 'settings') render();
     }
   }
 
@@ -1242,7 +1601,8 @@
       category: category.id,
       note: C.normalizeNote(refs.noteInput.value),
       date: date,
-      createdAt: existing ? existing.createdAt : new Date().toISOString()
+      createdAt: existing ? existing.createdAt : C.nowIso(),
+      updatedAt: C.nowIso()
     };
 
     if (existing) {
@@ -1307,6 +1667,8 @@
     const transaction = state.data.transactions[index];
     const category = C.getCategoryIn(state.data, transaction.type, transaction.category);
     closeDialog(refs.entryDialog);
+    const deletedAt = C.nowIso();
+    state.data.tombstones.transactions[id] = deletedAt;
     state.data.transactions.splice(index, 1);
     saveData();
     render();
@@ -1314,6 +1676,8 @@
       actionText: '撤销',
       duration: 5200,
       onAction: function () {
+        delete state.data.tombstones.transactions[id];
+        transaction.updatedAt = C.nowIso();
         state.data.transactions.splice(Math.min(index, state.data.transactions.length), 0, transaction);
         saveData();
         state.month = C.monthOf(transaction.date);
@@ -1432,6 +1796,7 @@
       category.icon = option.id;
       category.color = option.color;
       category.soft = option.soft;
+      category.updatedAt = C.nowIso();
     } else {
       category = {
         id: C.uid('custom-' + type),
@@ -1440,12 +1805,14 @@
         icon: option.id,
         color: option.color,
         soft: option.soft,
-        custom: true
+        custom: true,
+        updatedAt: C.nowIso()
       };
       state.data.categories.push(category);
       if (!state.data.categoryOrder) state.data.categoryOrder = { expense: [], income: [] };
       if (!Array.isArray(state.data.categoryOrder[type])) state.data.categoryOrder[type] = [];
       state.data.categoryOrder[type].push(category.id);
+      state.data.meta.categoryOrderAt[type] = C.nowIso();
     }
     saveData();
     closeDialog(refs.categoryDialog);
@@ -1484,6 +1851,8 @@
       danger: true,
       onConfirm: function () {
         closeDialog(refs.categoryDialog);
+        const now = C.nowIso();
+        state.data.tombstones.categories[id] = now;
         state.data.categories = state.data.categories.filter(function (item) {
           return item.id !== id;
         });
@@ -1491,12 +1860,18 @@
           state.data.categoryOrder[category.type] = state.data.categoryOrder[category.type].filter(function (categoryId) {
             return categoryId !== id;
           });
+          state.data.meta.categoryOrderAt[category.type] = now;
         }
         const fallback = category.type === 'income' ? 'other-income' : 'other';
         state.data.transactions.forEach(function (transaction) {
-          if (transaction.category === id) transaction.category = fallback;
+          if (transaction.category === id) {
+            transaction.category = fallback;
+            transaction.updatedAt = now;
+          }
         });
         delete state.data.budgets.categories[id];
+        state.data.meta.budgetCategoriesAt[id] = now;
+        state.data.meta.budgetCategoriesDeletedAt[id] = now;
         if (state.entryCategory === id) state.entryCategory = fallback;
         saveData();
         if (state.categoryReturnTo === 'entry' && refs.entryDialog.open) {
@@ -1580,6 +1955,7 @@
     const current = order[index];
     order[index] = order[target];
     order[target] = current;
+    state.data.meta.categoryOrderAt[state.sortType] = C.nowIso();
     saveData();
     renderSortList();
   }
@@ -1594,6 +1970,7 @@
     state.data.categoryOrder[type] = categories.map(function (category) {
       return category.id;
     });
+    state.data.meta.categoryOrderAt[type] = C.nowIso();
     saveData();
     renderSortList();
     showToast('已恢复默认顺序');
@@ -1687,8 +2064,11 @@
     }
     if (state.budgetMode === 'total') {
       state.data.budgets.totalCents = cents;
+      state.data.meta.budgetsTotalAt = C.nowIso();
     } else {
       state.data.budgets.categories[state.budgetCategory] = cents;
+      state.data.meta.budgetCategoriesAt[state.budgetCategory] = C.nowIso();
+      delete state.data.meta.budgetCategoriesDeletedAt[state.budgetCategory];
     }
     saveData();
     closeDialog(refs.budgetDialog);
@@ -1699,8 +2079,12 @@
   function clearCurrentBudget() {
     if (state.budgetMode === 'total') {
       state.data.budgets.totalCents = 0;
+      state.data.meta.budgetsTotalAt = C.nowIso();
     } else {
       delete state.data.budgets.categories[state.budgetCategory];
+      const now = C.nowIso();
+      state.data.meta.budgetCategoriesAt[state.budgetCategory] = now;
+      state.data.meta.budgetCategoriesDeletedAt[state.budgetCategory] = now;
     }
     saveData();
     closeDialog(refs.budgetDialog);
@@ -2061,6 +2445,14 @@
       pickCategoryIcon(element.dataset.icon);
       return;
     }
+    if (action === 'open-cloud') {
+      openCloudDialog();
+      return;
+    }
+    if (action === 'cloud-tab') {
+      setCloudAuthMode(element.dataset.mode);
+      return;
+    }
     if (action === 'open-sort-dialog') {
       openSortDialog('expense');
       return;
@@ -2132,6 +2524,11 @@
     });
     refs.budgetForm.addEventListener('submit', submitBudget);
     refs.clearBudget.addEventListener('click', clearCurrentBudget);
+    refs.cloudForm.addEventListener('submit', submitCloudAuth);
+    refs.cloudSyncNow.addEventListener('click', function () {
+      syncCloud({ manual: true });
+    });
+    refs.cloudLogout.addEventListener('click', logoutCloud);
     refs.toastAction.addEventListener('click', function () {
       const action = state.toastActionHandler;
       hideToast();
@@ -2153,6 +2550,7 @@
     document.addEventListener('change', function (event) {
       if (event.target && event.target.id === 'budgetAlertToggle') {
         state.data.settings.budgetAlerts = event.target.checked;
+        state.data.meta.settingsAt.budgetAlerts = C.nowIso();
         saveData();
         showToast(event.target.checked ? '预算提醒已开启' : '预算提醒已关闭');
       }
@@ -2193,6 +2591,10 @@
         console.warn('同步其他标签页数据失败', error);
       }
     });
+
+    window.addEventListener('online', function () {
+      if (cloudLoggedIn()) scheduleCloudSync();
+    });
   }
 
   function registerServiceWorker() {
@@ -2210,6 +2612,11 @@
     bindEvents();
     render();
     registerServiceWorker();
+    if (cloudLoggedIn()) {
+      window.setTimeout(function () {
+        syncCloud();
+      }, 1000);
+    }
     const params = new URLSearchParams(location.search);
     if (params.get('add') === '1') {
       history.replaceState(null, '', location.pathname + location.hash);

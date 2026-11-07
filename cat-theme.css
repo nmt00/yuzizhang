@@ -2180,3 +2180,116 @@ body.modal-open {
     animation: none;
   }
 }
+
+/* ---------- Cloud sync ---------- */
+.settings-section-note {
+  margin-left: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .04em;
+}
+
+.setting-icon.cloud-setting-icon {
+  color: #4f8a69;
+  background: #e6f3e7;
+}
+
+.cloud-state {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: #f1f4ec;
+  font-size: 9px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.cloud-state.on {
+  color: #3f7350;
+  background: #e2f2dd;
+}
+
+.cloud-sheet {
+  padding-bottom: max(22px, env(safe-area-inset-bottom));
+}
+.cloud-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin: 4px 0 14px;
+  padding: 3px;
+  border-radius: 12px;
+  background: #f2f6ec;
+}
+.cloud-tabs button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.cloud-tabs button.active {
+  color: var(--ink);
+  background: #fffdf7;
+  box-shadow: 0 3px 9px rgba(62, 92, 55, .08);
+}
+.cloud-submit {
+  width: 100%;
+  margin-top: 18px;
+}
+.cloud-account-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 6px;
+}
+.cloud-account-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #f8fbf3;
+}
+.cloud-account-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: #4f8a69;
+  background: #e6f3e7;
+}
+.cloud-account-icon .icon {
+  width: 19px;
+  height: 19px;
+}
+.cloud-account-card strong {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.cloud-account-card span:not(.cloud-account-icon) {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+.cloud-account-panel .text-muted {
+  justify-self: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.local-pill.cloud-on {
+  color: #356b4b;
+  background: #e1f2df;
+  border-color: rgba(76, 135, 86, .2);
+}

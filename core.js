@@ -7,7 +7,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = 1;
+  const VERSION = 2;
   const APP_ID = 'yuzizhang';
 
   const CATEGORIES = {
@@ -165,6 +165,56 @@
       .slice(0, 10);
   }
 
+  function nowIso() {
+    return new Date().toISOString();
+  }
+
+  function validTimestamp(value) {
+    return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null;
+  }
+
+  function normalizeTimestampMap(raw) {
+    const result = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return result;
+    Object.keys(raw).forEach(function (key) {
+      const timestamp = validTimestamp(raw[key]);
+      if (timestamp) result[key] = timestamp;
+    });
+    return result;
+  }
+
+  function normalizeTombstones(raw) {
+    const source = raw && typeof raw === 'object' ? raw : {};
+    return {
+      transactions: normalizeTimestampMap(source.transactions),
+      categories: normalizeTimestampMap(source.categories)
+    };
+  }
+
+  function createEmptyMeta() {
+    return {
+      categoryOrderAt: { expense: null, income: null },
+      budgetsTotalAt: null,
+      budgetCategoriesAt: {},
+      budgetCategoriesDeletedAt: {},
+      settingsAt: { budgetAlerts: null }
+    };
+  }
+
+  function normalizeMeta(raw) {
+    const result = createEmptyMeta();
+    if (!raw || typeof raw !== 'object') return result;
+    ['expense', 'income'].forEach(function (type) {
+      const timestamp = validTimestamp(raw.categoryOrderAt && raw.categoryOrderAt[type]);
+      if (timestamp) result.categoryOrderAt[type] = timestamp;
+    });
+    result.budgetsTotalAt = validTimestamp(raw.budgetsTotalAt);
+    result.budgetCategoriesAt = normalizeTimestampMap(raw.budgetCategoriesAt);
+    result.budgetCategoriesDeletedAt = normalizeTimestampMap(raw.budgetCategoriesDeletedAt);
+    result.settingsAt.budgetAlerts = validTimestamp(raw.settingsAt && raw.settingsAt.budgetAlerts);
+    return result;
+  }
+
   function normalizeCustomCategories(rawCategories) {
     if (!Array.isArray(rawCategories)) return [];
     const result = [];
@@ -196,7 +246,8 @@
         icon: icon.id,
         color: icon.color,
         soft: icon.soft,
-        custom: true
+        custom: true,
+        updatedAt: validTimestamp(raw.updatedAt) || nowIso()
       });
     });
     return result;
@@ -369,6 +420,7 @@
       typeof raw.createdAt === 'string' && !Number.isNaN(Date.parse(raw.createdAt))
         ? raw.createdAt
         : new Date(Date.now() - (index || 0)).toISOString();
+    const updatedAt = validTimestamp(raw.updatedAt) || createdAt;
     return {
       id: id,
       type: type,
@@ -376,7 +428,8 @@
       category: category ? category.id : type === 'income' ? 'other-income' : 'other',
       note: normalizeNote(raw.note),
       date: date,
-      createdAt: createdAt
+      createdAt: createdAt,
+      updatedAt: updatedAt
     };
   }
 
@@ -388,7 +441,9 @@
       categoryOrder: { expense: [], income: [] },
       budgets: { totalCents: 0, categories: {} },
       settings: { budgetAlerts: true },
-      createdAt: new Date().toISOString()
+      tombstones: { transactions: {}, categories: {} },
+      meta: createEmptyMeta(),
+      createdAt: nowIso()
     };
   }
 
@@ -417,6 +472,8 @@
     if (raw.settings && typeof raw.settings === 'object') {
       data.settings.budgetAlerts = raw.settings.budgetAlerts !== false;
     }
+    data.tombstones = normalizeTombstones(raw.tombstones);
+    data.meta = normalizeMeta(raw.meta);
     if (typeof raw.createdAt === 'string' && !Number.isNaN(Date.parse(raw.createdAt))) {
       data.createdAt = raw.createdAt;
     }
@@ -612,7 +669,8 @@
           category: transaction.category,
           note: transaction.note,
           date: transaction.date,
-          createdAt: transaction.createdAt
+          createdAt: transaction.createdAt,
+          updatedAt: transaction.updatedAt
         };
       }),
       categories: (data.categories || []).map(function (category) {
@@ -622,7 +680,8 @@
           name: category.name,
           icon: category.icon,
           color: category.color,
-          soft: category.soft
+          soft: category.soft,
+          updatedAt: category.updatedAt
         };
       }),
       categoryOrder: {
@@ -633,7 +692,9 @@
         totalCents: data.budgets.totalCents,
         categories: Object.assign({}, data.budgets.categories)
       },
-      settings: Object.assign({}, data.settings)
+      settings: Object.assign({}, data.settings),
+      tombstones: normalizeTombstones(data.tombstones),
+      meta: normalizeMeta(data.meta)
     };
   }
 
@@ -828,6 +889,11 @@
     normalizeCategoryName: normalizeCategoryName,
     normalizeCustomCategories: normalizeCustomCategories,
     normalizeCategoryOrder: normalizeCategoryOrder,
+    nowIso: nowIso,
+    validTimestamp: validTimestamp,
+    normalizeTombstones: normalizeTombstones,
+    normalizeMeta: normalizeMeta,
+    createEmptyMeta: createEmptyMeta,
     uid: uid,
     todayISO: todayISO,
     currentMonth: currentMonth,
