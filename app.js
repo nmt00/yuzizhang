@@ -1055,7 +1055,9 @@
       '</div>' +
       '<div class="settings-card update-card"><button class="setting-row" type="button" data-action="check-update">' +
       '<span class="setting-icon blue">' + icon('refresh') + '</span>' +
-      '<span class="setting-main"><span class="setting-title">检查更新</span><span class="setting-desc">看到旧版本时，清理缓存并重新加载</span></span>' +
+      '<span class="setting-main"><span class="setting-title">检查更新</span><span class="setting-desc">' +
+      (isNativeApp() ? '原生 App 需要安装新 APK 才能更新' : '看到旧版本时，清理缓存并重新加载') +
+      '</span></span>' +
       icon('chevron-right', 'setting-chevron') +
       '</button></div>' +
       '</section>' +
@@ -2406,6 +2408,10 @@
   }
 
   async function forceRefreshApp() {
+    if (isNativeApp()) {
+      showToast('原生 App 不能应用内更新，请下载并安装新版 APK', { type: 'warning', duration: 5000 });
+      return;
+    }
     showToast('正在清理旧缓存…', { duration: 1200 });
     try {
       if ('serviceWorker' in navigator) {
