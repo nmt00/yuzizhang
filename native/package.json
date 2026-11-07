@@ -1,6 +1,6 @@
 {
   "name": "yuzizhang-native",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "private": true,
   "description": "玉子账 Capacitor 原生壳（Android / iOS）",
   "scripts": {

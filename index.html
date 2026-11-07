@@ -13,8 +13,8 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <link rel="stylesheet" href="styles.css?v=1.4.1">
-  <link rel="stylesheet" href="cat-theme.css?v=1.4.1">
+  <link rel="stylesheet" href="styles.css?v=1.4.2">
+  <link rel="stylesheet" href="cat-theme.css?v=1.4.2">
   <style>html{background:#eef8e9}</style>
 </head>
 <body>
@@ -207,7 +207,10 @@
 
         <div class="field-heading">
           <span>记账类型</span>
-          <button class="field-add-btn" type="button" data-action="open-category-editor">＋ 自定义</button>
+          <span class="field-heading-actions">
+            <button class="field-add-btn" type="button" data-action="open-sort-dialog" aria-label="调整记账类型顺序">↕ 排序</button>
+            <button class="field-add-btn" type="button" data-action="open-category-editor">＋ 自定义</button>
+          </span>
         </div>
         <div class="category-grid" id="categoryPicker" role="group" aria-label="记账类型"></div>
 
@@ -401,9 +404,9 @@
     <div class="noscript">玉子账需要启用 JavaScript 才能使用。</div>
   </noscript>
 
-  <script src="core.js?v=1.4.1"></script>
-  <script src="sync.js?v=1.4.1"></script>
-  <script src="cloud-config.js?v=1.4.1"></script>
-  <script src="app.js?v=1.4.1"></script>
+  <script src="core.js?v=1.4.2"></script>
+  <script src="sync.js?v=1.4.2"></script>
+  <script src="cloud-config.js?v=1.4.2"></script>
+  <script src="app.js?v=1.4.2"></script>
 </body>
 </html>

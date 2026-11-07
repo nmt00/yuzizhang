@@ -80,6 +80,7 @@
     categoryEditId: null,
     categoryIcon: 'coffee',
     categoryReturnTo: 'entry',
+    customCategoriesExpanded: false,
     sortType: 'expense',
     pendingImport: null,
     confirmAction: null,
@@ -875,9 +876,11 @@
 
   /* ---------- Settings ---------- */
 
-  function renderCustomCategoryRow(category) {
+  function renderCustomCategoryRow(category, extra) {
     return (
-      '<button class="setting-row custom-category-row" type="button" data-action="open-category-editor" data-id="' +
+      '<button class="setting-row custom-category-row' +
+      (extra ? ' extra-category-row' : '') +
+      '" type="button" data-action="open-category-editor" data-id="' +
       escapeHtml(category.id) +
       '">' +
       '<span class="setting-icon custom-cat-icon" style="--cat-color:' +
@@ -963,10 +966,33 @@
       '</div></div></section>' +
       '<section class="settings-section">' +
       '<p class="settings-section-title">自定义分类</p>' +
-      '<div class="settings-card">' +
+      '<div class="settings-card custom-category-card' +
+      (state.customCategoriesExpanded ? ' is-expanded' : '') +
+      '">' +
       (customCategories.length
-        ? customCategories.map(renderCustomCategoryRow).join('')
+        ? customCategories
+            .map(function (category, index) {
+              return renderCustomCategoryRow(category, index >= 3);
+            })
+            .join('')
         : '<div class="category-empty-note">' + pawIcon() + '还没有自定义分类，点下面添加一个吧。</div>') +
+      (customCategories.length > 3
+        ? '<button class="setting-row category-expand-row" type="button" data-action="toggle-category-list" aria-expanded="' +
+          (state.customCategoriesExpanded ? 'true' : 'false') +
+          '">' +
+          '<span class="setting-icon category-expand-icon">' +
+          icon(state.customCategoriesExpanded ? 'chevron-up' : 'chevron-down') +
+          '</span>' +
+          '<span class="setting-main"><span class="setting-title">' +
+          (state.customCategoriesExpanded
+            ? '收起自定义分类'
+            : '展开另外 ' + (customCategories.length - 3) + ' 个分类') +
+          '</span><span class="setting-desc">' +
+          (state.customCategoriesExpanded ? '只看最常用的前 3 个' : '默认只显示前 3 个') +
+          '</span></span>' +
+          icon('chevron-right', 'setting-chevron') +
+          '</button>'
+        : '') +
       '<button class="setting-row" type="button" data-action="open-category-editor" data-type="expense">' +
       '<span class="setting-icon category-add-icon">' + icon('plus') + '</span>' +
       '<span class="setting-main"><span class="setting-title">新增支出分类</span><span class="setting-desc">咖啡、猫咪、旅行……都可以</span></span>' +
@@ -1033,7 +1059,7 @@
       icon('chevron-right', 'setting-chevron') +
       '</button></div>' +
       '</section>' +
-      '<footer class="app-footer">玉子账 <span class="version-pill">v1.4.1</span><br>本机占用 ' +
+      '<footer class="app-footer">玉子账 <span class="version-pill">v1.4.2</span><br>本机占用 ' +
       C.formatFileSize(storageSize) +
       ' · 猫猫陪你记好每一笔</footer>'
     );
@@ -1458,6 +1484,7 @@
     refs.importMerge.addEventListener('click', mergePendingImport);
     refs.importReplace.addEventListener('click', replacePendingImport);
     refs.sortDialog.addEventListener('close', function () {
+      if (refs.entryDialog.open) renderEntryCategories();
       if (state.view === 'settings') render();
     });
     refs.resetCategoryOrder.addEventListener('click', resetCategoryOrder);
@@ -1813,6 +1840,7 @@
       if (!Array.isArray(state.data.categoryOrder[type])) state.data.categoryOrder[type] = [];
       state.data.categoryOrder[type].push(category.id);
       state.data.meta.categoryOrderAt[type] = C.nowIso();
+      state.customCategoriesExpanded = true;
     }
     saveData();
     closeDialog(refs.categoryDialog);
@@ -2475,7 +2503,13 @@
       return;
     }
     if (action === 'open-sort-dialog') {
-      openSortDialog('expense');
+      const type = element.dataset.type || (refs.entryDialog.open ? state.entryType : 'expense');
+      openSortDialog(type);
+      return;
+    }
+    if (action === 'toggle-category-list') {
+      state.customCategoriesExpanded = !state.customCategoriesExpanded;
+      if (state.view === 'settings') render();
       return;
     }
     if (action === 'sort-tab') {

@@ -2293,3 +2293,29 @@ body.modal-open {
   background: #e1f2df;
   border-color: rgba(76, 135, 86, .2);
 }
+
+/* ---------- Custom category collapse ---------- */
+.custom-category-card:not(.is-expanded) .custom-category-row.extra-category-row {
+  display: none;
+}
+
+.category-expand-row {
+  color: var(--primary-dark);
+}
+.category-expand-icon {
+  color: #4f8a69;
+  background: #e6f3e7;
+}
+.category-expand-row .setting-chevron {
+  opacity: .45;
+}
+
+/* ---------- Entry sort action ---------- */
+.field-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.field-heading-actions .field-add-btn {
+  white-space: nowrap;
+}
