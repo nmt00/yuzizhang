@@ -510,6 +510,122 @@
     return summary;
   }
 
+  function isValidMonth(month) {
+    return /^\d{4}-(0[1-9]|1[0-2])$/.test(String(month || ''));
+  }
+
+  function getMonthComparison(data, month, today) {
+    const selected = isValidMonth(month) ? month : currentMonth();
+    const todayDate = today
+      ? today instanceof Date
+        ? today
+        : new Date(String(today).slice(0, 10) + 'T00:00:00')
+      : new Date();
+    const todayMonth = currentMonth(todayDate);
+    const todayDay = todayDate.getDate();
+    let cutoff;
+    if (selected === todayMonth) cutoff = Math.min(todayDay, daysInMonth(selected));
+    else if (selected < todayMonth) cutoff = daysInMonth(selected);
+    else cutoff = 0;
+
+    const previousMonth = shiftMonth(selected, -1);
+    const previousCutoff = Math.min(cutoff, daysInMonth(previousMonth));
+    const current = { incomeCents: 0, expenseCents: 0, count: 0 };
+    const previous = { incomeCents: 0, expenseCents: 0, count: 0 };
+
+    (data.transactions || []).forEach(function (transaction) {
+      const transactionMonth = transaction.date.slice(0, 7);
+      const day = Number(transaction.date.slice(8, 10));
+      if (transactionMonth === selected && cutoff > 0 && day <= cutoff) {
+        current.count += 1;
+        if (transaction.type === 'income') current.incomeCents += transaction.amountCents;
+        else current.expenseCents += transaction.amountCents;
+      }
+      if (transactionMonth === previousMonth && previousCutoff > 0 && day <= previousCutoff) {
+        previous.count += 1;
+        if (transaction.type === 'income') previous.incomeCents += transaction.amountCents;
+        else previous.expenseCents += transaction.amountCents;
+      }
+    });
+
+    return {
+      month: selected,
+      previousMonth: previousMonth,
+      cutoff: cutoff,
+      previousCutoff: previousCutoff,
+      current: current,
+      previous: previous,
+      expenseDiffCents: current.expenseCents - previous.expenseCents,
+      incomeDiffCents: current.incomeCents - previous.incomeCents
+    };
+  }
+
+  function getRangeSummary(data, startMonth, endMonth) {
+    let start = isValidMonth(startMonth) ? startMonth : currentMonth();
+    let end = isValidMonth(endMonth) ? endMonth : currentMonth();
+    if (start > end) {
+      const swap = start;
+      start = end;
+      end = swap;
+    }
+    const result = {
+      startMonth: start,
+      endMonth: end,
+      incomeCents: 0,
+      expenseCents: 0,
+      balanceCents: 0,
+      count: 0,
+      months: []
+    };
+    const byMonth = {};
+    let cursor = start;
+    while (cursor <= end) {
+      byMonth[cursor] = { month: cursor, incomeCents: 0, expenseCents: 0, count: 0 };
+      result.months.push(byMonth[cursor]);
+      cursor = shiftMonth(cursor, 1);
+      if (result.months.length > 600) break;
+    }
+    (data.transactions || []).forEach(function (transaction) {
+      const transactionMonth = transaction.date.slice(0, 7);
+      if (transactionMonth < start || transactionMonth > end) return;
+      const bucket = byMonth[transactionMonth];
+      if (!bucket) return;
+      result.count += 1;
+      bucket.count += 1;
+      if (transaction.type === 'income') {
+        result.incomeCents += transaction.amountCents;
+        bucket.incomeCents += transaction.amountCents;
+      } else {
+        result.expenseCents += transaction.amountCents;
+        bucket.expenseCents += transaction.amountCents;
+      }
+    });
+    result.balanceCents = result.incomeCents - result.expenseCents;
+    return result;
+  }
+
+  function getYearSummaries(data) {
+    const map = {};
+    (data.transactions || []).forEach(function (transaction) {
+      const year = transaction.date.slice(0, 4);
+      if (!map[year]) {
+        map[year] = { year: year, incomeCents: 0, expenseCents: 0, balanceCents: 0, count: 0 };
+      }
+      map[year].count += 1;
+      if (transaction.type === 'income') map[year].incomeCents += transaction.amountCents;
+      else map[year].expenseCents += transaction.amountCents;
+    });
+    return Object.keys(map)
+      .sort(function (a, b) {
+        return Number(b) - Number(a);
+      })
+      .map(function (year) {
+        const item = map[year];
+        item.balanceCents = item.incomeCents - item.expenseCents;
+        return item;
+      });
+  }
+
   function getCategoryBreakdown(data, month, type) {
     const map = {};
     (data.transactions || []).forEach(function (transaction) {
@@ -915,6 +1031,9 @@
     sortTransactions: sortTransactions,
     getMonthTransactions: getMonthTransactions,
     getMonthSummary: getMonthSummary,
+    getMonthComparison: getMonthComparison,
+    getRangeSummary: getRangeSummary,
+    getYearSummaries: getYearSummaries,
     getCategoryBreakdown: getCategoryBreakdown,
     getBudgetStatus: getBudgetStatus,
     getCategoryBudgetStatuses: getCategoryBudgetStatuses,

@@ -1,15 +1,15 @@
 'use strict';
 
-const CACHE_NAME = 'yuzizhang-v1.4.2';
+const CACHE_NAME = 'yuzizhang-v1.4.3';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css?v=1.4.2',
-  './cat-theme.css?v=1.4.2',
-  './core.js?v=1.4.2',
-  './sync.js?v=1.4.2',
-  './cloud-config.js?v=1.4.2',
-  './app.js?v=1.4.2',
+  './styles.css?v=1.4.3',
+  './cat-theme.css?v=1.4.3',
+  './core.js?v=1.4.3',
+  './sync.js?v=1.4.3',
+  './cloud-config.js?v=1.4.3',
+  './app.js?v=1.4.3',
   './manifest.webmanifest',
   './assets/cat-pattern.svg',
   './icons/favicon.svg',

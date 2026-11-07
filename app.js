@@ -69,6 +69,9 @@
     data: loadData(),
     view: readView(),
     month: C.currentMonth(),
+    reportMode: 'month',
+    rangeStart: C.currentMonth().slice(0, 4) + '-01',
+    rangeEnd: C.currentMonth(),
     reportType: 'expense',
     entryType: 'expense',
     entryCategory: 'food',
@@ -362,6 +365,7 @@
       '</header>' +
       renderDiaryHero(summary) +
       renderMonthSummary(summary, averageExpense) +
+      renderMonthComparison() +
       renderBudgetPeek(budget) +
       renderAlerts(visibleAlerts, 1) +
       '<section class="section timeline-section">' +
@@ -432,6 +436,48 @@
       C.formatMoney(averageExpense) +
       '</strong></div>' +
       '</div>'
+    );
+  }
+
+  function comparisonDelta(currentCents, previousCents, kind) {
+    const diff = currentCents - previousCents;
+    if (!currentCents && !previousCents) return { cls: 'is-flat', text: '还没有记录' };
+    if (!diff) return { cls: 'is-flat', text: '和上月同期持平' };
+    const action = diff > 0 ? (kind === 'expense' ? '多花' : '多收入') : kind === 'expense' ? '少花' : '少收入';
+    return {
+      cls: diff > 0 ? 'is-up' : 'is-down',
+      text: action + ' ' + C.formatMoney(Math.abs(diff))
+    };
+  }
+
+  function renderMonthComparison() {
+    if (state.month > C.currentMonth()) return '';
+    const comparison = C.getMonthComparison(state.data, state.month, C.todayISO());
+    if (!comparison.cutoff) return '';
+    const currentLabel = C.monthLabel(comparison.month, true) + '1–' + comparison.cutoff + '日';
+    const previousLabel =
+      C.monthLabel(comparison.previousMonth, true) + '1–' + comparison.previousCutoff + '日';
+    const expense = comparisonDelta(comparison.current.expenseCents, comparison.previous.expenseCents, 'expense');
+    const income = comparisonDelta(comparison.current.incomeCents, comparison.previous.incomeCents, 'income');
+    const shortMonth = comparison.previousCutoff < comparison.cutoff;
+    return (
+      '<section class="compare-card" aria-label="和上月同期收支对比">' +
+      '<div class="compare-head"><div><p class="compare-kicker">上月同期</p><h2 class="compare-title">和上月比一比</h2></div>' +
+      '<span class="compare-period">' + currentLabel + ' <b>vs</b> ' + previousLabel + '</span></div>' +
+      '<div class="compare-grid">' +
+      '<div class="compare-item expense"><div class="compare-item-top"><span>支出</span><strong>' +
+      C.formatMoney(comparison.current.expenseCents) +
+      '</strong></div><span class="compare-delta ' + expense.cls + '">' + expense.text + '</span>' +
+      '<small>上月同期 ' + C.formatMoney(comparison.previous.expenseCents) + '</small></div>' +
+      '<div class="compare-item income"><div class="compare-item-top"><span>收入</span><strong>' +
+      C.formatMoney(comparison.current.incomeCents) +
+      '</strong></div><span class="compare-delta ' + income.cls + '">' + income.text + '</span>' +
+      '<small>上月同期 ' + C.formatMoney(comparison.previous.incomeCents) + '</small></div>' +
+      '</div>' +
+      '<p class="compare-note">' +
+      pawIcon() +
+      (shortMonth ? '上月没有 ' + comparison.cutoff + ' 天，按上月最后一天对比。' : '按每月截止到同一天统计。') +
+      '</p></section>'
     );
   }
 
@@ -517,6 +563,45 @@
   /* ---------- Reports ---------- */
 
   function renderReports() {
+    const isRange = state.reportMode === 'range';
+    if (isRange) {
+      return (
+        renderTopbar() +
+        '<header class="page-head">' +
+        '<p class="eyebrow">YEAR &amp; RANGE</p>' +
+        '<h1 class="page-title">收支总览</h1>' +
+        '<p class="page-subtitle">把时间拉长，看看每一年的日子。' +
+        '</p></header>' +
+        renderReportModeSwitch(true) +
+        renderRangeReport()
+      );
+    }
+    return (
+      renderTopbar() +
+      '<header class="page-head">' +
+      '<p class="eyebrow">' + escapeHtml(C.monthLabel(state.month)) + '</p>' +
+      '<h1 class="page-title">花销手账</h1>' +
+      '<p class="page-subtitle">每一笔去向，玉子都帮你画好了。</p>' +
+      '</header>' +
+      renderReportModeSwitch(false) +
+      renderMonthlyReport()
+    );
+  }
+
+  function renderReportModeSwitch(isRange) {
+    return (
+      '<div class="report-mode-switch" role="group" aria-label="统计范围">' +
+      '<button type="button" data-action="report-mode" data-mode="month" class="' +
+      (!isRange ? 'active' : '') +
+      '">月度分析</button>' +
+      '<button type="button" data-action="report-mode" data-mode="range" class="' +
+      (isRange ? 'active' : '') +
+      '">年度 / 区间</button>' +
+      '</div>'
+    );
+  }
+
+  function renderMonthlyReport() {
     const summary = C.getMonthSummary(state.data, state.month);
     const type = state.reportType;
     const isExpense = type === 'expense';
@@ -525,12 +610,6 @@
     const transactions = C.getMonthTransactions(state.data, state.month);
 
     return (
-      renderTopbar() +
-      '<header class="page-head">' +
-      '<p class="eyebrow">' + escapeHtml(C.monthLabel(state.month)) + '</p>' +
-      '<h1 class="page-title">花销手账</h1>' +
-      '<p class="page-subtitle">每一笔去向，玉子都帮你画好了。</p>' +
-      '</header>' +
       renderMonthSwitch() +
       '<div class="segment" role="group" aria-label="统计类型">' +
       '<button type="button" data-action="report-type" data-type="expense" class="' +
@@ -543,6 +622,122 @@
       (total > 0
         ? renderReportContent(total, breakdown, summary, transactions, type)
         : renderEmpty('这个月还没有' + (isExpense ? '支出' : '收入') + '记录', '记下几笔之后，这里会自动生成分类占比和趋势图。', '去记一笔'))
+    );
+  }
+
+  function rangeYearOptions() {
+    const years = C.getYearSummaries(state.data).map(function (item) {
+      return Number(item.year);
+    });
+    const currentYear = Number(C.currentMonth().slice(0, 4));
+    const minYear = years.length ? Math.min.apply(null, years.concat([currentYear - 1])) : currentYear;
+    const maxYear = Math.max(currentYear, years.length ? Math.max.apply(null, years) : currentYear);
+    const options = [];
+    for (let year = minYear; year <= maxYear; year += 1) options.push(year);
+    return { options: options, years: years };
+  }
+
+  function rangeParts(month) {
+    const match = /^(\d{4})-(\d{2})$/.exec(String(month || ''));
+    return match ? { year: match[1], month: match[2] } : { year: C.currentMonth().slice(0, 4), month: C.currentMonth().slice(5, 7) };
+  }
+
+  function renderRangePicker(yearsInfo) {
+    const start = rangeParts(state.rangeStart);
+    const end = rangeParts(state.rangeEnd);
+    const monthOptions = [];
+    for (let month = 1; month <= 12; month += 1) monthOptions.push(String(month).padStart(2, '0'));
+    const yearOptions = yearsInfo.options
+      .map(function (year) {
+        return '<option value="' + year + '"' + (String(year) === start.year ? ' selected' : '') + '>' + year + '</option>';
+      })
+      .join('');
+    const endYearOptions = yearsInfo.options
+      .map(function (year) {
+        return '<option value="' + year + '"' + (String(year) === end.year ? ' selected' : '') + '>' + year + '</option>';
+      })
+      .join('');
+    const monthSelect = function (id, selected) {
+      return (
+        '<select id="' + id + '" class="range-select" aria-label="月份">' +
+        monthOptions
+          .map(function (month) {
+            return '<option value="' + month + '"' + (month === selected ? ' selected' : '') + '>' + Number(month) + '月</option>';
+          })
+          .join('') +
+        '</select>'
+      );
+    };
+    return (
+      '<div class="range-picker">' +
+      '<label class="range-field"><span>从</span><span class="range-selects">' +
+      '<select id="rangeStartYear" class="range-select" aria-label="开始年份">' + yearOptions + '</select>' +
+      monthSelect('rangeStartMonth', start.month) +
+      '</span></label>' +
+      '<span class="range-arrow">→</span>' +
+      '<label class="range-field"><span>到</span><span class="range-selects">' +
+      '<select id="rangeEndYear" class="range-select" aria-label="结束年份">' + endYearOptions + '</select>' +
+      monthSelect('rangeEndMonth', end.month) +
+      '</span></label>' +
+      '</div>'
+    );
+  }
+
+  function renderRangeReport() {
+    const yearsInfo = rangeYearOptions();
+    const rangeYears = C.getYearSummaries(state.data);
+    const summary = C.getRangeSummary(state.data, state.rangeStart, state.rangeEnd);
+    const currentYear = C.currentMonth().slice(0, 4);
+    const lastYear = String(Number(currentYear) - 1);
+    const last12 = C.shiftMonth(C.currentMonth(), -11);
+    const earliest = rangeYears.length ? rangeYears[rangeYears.length - 1].year + '-01' : currentYear + '-01';
+    const latest = rangeYears.length ? rangeYears[0].year + '-12' : C.currentMonth();
+    const quick = function (label, start, end) {
+      return (
+        '<button type="button" class="range-quick" data-action="set-range" data-start="' +
+        start +
+        '" data-end="' +
+        end +
+        '">' +
+        label +
+        '</button>'
+      );
+    };
+
+    return (
+      '<section class="range-card">' +
+      '<div class="range-card-head"><div><p class="card-kicker">DATE RANGE</p><h2 class="card-title">选择统计范围</h2></div>' +
+      '<span class="range-card-note">' + summary.months.length + ' 个月</span></div>' +
+      renderRangePicker(yearsInfo) +
+      '<div class="range-quick-row">' +
+      quick('今年', currentYear + '-01', C.currentMonth()) +
+      quick('去年', lastYear + '-01', lastYear + '-12') +
+      quick('近 12 个月', last12, C.currentMonth()) +
+      quick('全部', earliest, latest) +
+      '</div>' +
+      '<div class="range-total-grid">' +
+      '<div class="range-total expense"><span>总支出</span><strong>' + C.formatMoney(summary.expenseCents) + '</strong></div>' +
+      '<div class="range-total income"><span>总收入</span><strong>' + C.formatMoney(summary.incomeCents) + '</strong></div>' +
+      '<div class="range-total balance"><span>结余</span><strong>' + C.formatMoney(summary.balanceCents) + '</strong></div>' +
+      '</div>' +
+      '<p class="range-meta">' + summary.startMonth.replace('-', '年') + '月 至 ' + summary.endMonth.replace('-', '年') + '月 · 共 ' + summary.count + ' 笔</p>' +
+      '</section>' +
+      (rangeYears.length
+        ? '<section class="report-card annual-card"><div class="report-card-head"><div><p class="card-kicker">YEARLY</p><h2 class="card-title">每年的收支</h2></div><span class="card-note">点年份看全年</span></div><div class="annual-list">' +
+          rangeYears
+            .map(function (year) {
+              return (
+                '<button class="annual-row" type="button" data-action="range-year" data-year="' + year.year + '">' +
+                '<span class="annual-year">' + year.year + '</span>' +
+                '<span class="annual-values"><span class="annual-expense">支出 ' + C.formatMoney(year.expenseCents) + '</span><span class="annual-income">收入 ' + C.formatMoney(year.incomeCents) + '</span></span>' +
+                '<span class="annual-net ' + (year.balanceCents < 0 ? 'negative' : '') + '">' + C.formatMoney(year.balanceCents) + '</span>' +
+                icon('chevron-right', 'setting-chevron') +
+                '</button>'
+              );
+            })
+            .join('') +
+          '</div></section>'
+        : renderEmpty('还没有年度数据', '先记下几笔，玉子会把每年的收支整理给你。', '去记一笔'))
     );
   }
 
@@ -1061,7 +1256,7 @@
       icon('chevron-right', 'setting-chevron') +
       '</button></div>' +
       '</section>' +
-      '<footer class="app-footer">玉子账 <span class="version-pill">v1.4.2</span><br>本机占用 ' +
+      '<footer class="app-footer">玉子账 <span class="version-pill">v1.4.3</span><br>本机占用 ' +
       C.formatFileSize(storageSize) +
       ' · 猫猫陪你记好每一笔</footer>'
     );
@@ -2473,6 +2668,37 @@
       render();
       return;
     }
+    if (action === 'report-mode') {
+      state.reportMode = element.dataset.mode === 'range' ? 'range' : 'month';
+      if (state.reportMode === 'range') {
+        const current = C.currentMonth();
+        if (!state.rangeStart || !state.rangeEnd) {
+          state.rangeStart = current.slice(0, 4) + '-01';
+          state.rangeEnd = current;
+        }
+      }
+      render();
+      return;
+    }
+    if (action === 'set-range') {
+      const start = element.dataset.start;
+      const end = element.dataset.end;
+      if (start && end) {
+        state.rangeStart = start;
+        state.rangeEnd = end;
+        render();
+      }
+      return;
+    }
+    if (action === 'range-year') {
+      const year = element.dataset.year;
+      if (year) {
+        state.rangeStart = year + '-01';
+        state.rangeEnd = year + '-12';
+        render();
+      }
+      return;
+    }
     if (action === 'pick-category') {
       pickEntryCategory(element.dataset.category);
       return;
@@ -2614,6 +2840,25 @@
         state.data.meta.settingsAt.budgetAlerts = C.nowIso();
         saveData();
         showToast(event.target.checked ? '预算提醒已开启' : '预算提醒已关闭');
+      }
+      if (
+        event.target &&
+        ['rangeStartYear', 'rangeStartMonth', 'rangeEndYear', 'rangeEndMonth'].indexOf(event.target.id) !== -1
+      ) {
+        const start = document.getElementById('rangeStartYear').value + '-' + document.getElementById('rangeStartMonth').value;
+        const end = document.getElementById('rangeEndYear').value + '-' + document.getElementById('rangeEndMonth').value;
+        if (start > end) {
+          if (event.target.id.indexOf('rangeStart') === 0) {
+            document.getElementById('rangeEndYear').value = document.getElementById('rangeStartYear').value;
+            document.getElementById('rangeEndMonth').value = document.getElementById('rangeStartMonth').value;
+          } else {
+            document.getElementById('rangeStartYear').value = document.getElementById('rangeEndYear').value;
+            document.getElementById('rangeStartMonth').value = document.getElementById('rangeEndMonth').value;
+          }
+        }
+        state.rangeStart = document.getElementById('rangeStartYear').value + '-' + document.getElementById('rangeStartMonth').value;
+        state.rangeEnd = document.getElementById('rangeEndYear').value + '-' + document.getElementById('rangeEndMonth').value;
+        render();
       }
     });
 
