@@ -1033,7 +1033,7 @@
       icon('chevron-right', 'setting-chevron') +
       '</button></div>' +
       '</section>' +
-      '<footer class="app-footer">玉子账 <span class="version-pill">v1.4.0</span><br>本机占用 ' +
+      '<footer class="app-footer">玉子账 <span class="version-pill">v1.4.1</span><br>本机占用 ' +
       C.formatFileSize(storageSize) +
       ' · 猫猫陪你记好每一笔</footer>'
     );
@@ -2094,7 +2094,28 @@
 
   /* ---------- Export / import ---------- */
 
-  function downloadFile(content, filename, mimeType) {
+  async function downloadFile(content, filename, mimeType) {
+    if (isNativeApp() && window.Capacitor && window.Capacitor.Plugins) {
+      const plugins = window.Capacitor.Plugins;
+      if (plugins.Filesystem && plugins.Share) {
+        try {
+          const saved = await plugins.Filesystem.writeFile({
+            path: filename,
+            data: content,
+            directory: 'CACHE',
+            encoding: 'utf8'
+          });
+          await plugins.Share.share({
+            title: filename,
+            url: saved.uri,
+            dialogTitle: '保存或分享玉子账备份'
+          });
+          return;
+        } catch (error) {
+          console.warn('原生文件导出失败，尝试网页下载', error);
+        }
+      }
+    }
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -2597,7 +2618,17 @@
     });
   }
 
+  function isNativeApp() {
+    return Boolean(
+      window.YUZI_NATIVE ||
+        (window.Capacitor &&
+          typeof window.Capacitor.isNativePlatform === 'function' &&
+          window.Capacitor.isNativePlatform())
+    );
+  }
+
   function registerServiceWorker() {
+    if (isNativeApp()) return;
     if (!('serviceWorker' in navigator)) return;
     if (!/^https?:$/.test(location.protocol)) return;
     window.addEventListener('load', function () {

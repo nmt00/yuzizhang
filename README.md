@@ -32,6 +32,7 @@
 - **可选云同步**：邮箱 + 密码登录自己的同步服务器；自动/手动同步，按记录更新时间合并冲突，删除用墓碑标记，不会在另一台设备上被旧数据复活。
 - **本机优先**：不登录云同步时，所有账目保存在浏览器 `localStorage`，不上传服务器。
 - **PWA**：可安装到手机桌面，离线缓存应用界面。
+- **原生壳**：`native/` 提供 Capacitor Android / iOS 工程配置，复用同一份前端；附带 GitHub Actions 构建 debug APK 的工作流。
 - **移动端适配**：底部导航、猫咪加号按钮、底部弹层记账、安全区适配、数字等宽显示。
 
 ## 本地运行
@@ -143,10 +144,28 @@ qingzhang/                    # 目录名沿用旧版，方便现有部署直接
 │   └── cat-pattern.svg       # 猫咪背景纹样
 ├── icons/                    # 192 / 512 / maskable / Apple 图标
 ├── docs/screenshots/         # README 界面截图
+├── native/                   # Capacitor Android / iOS 原生壳
+│   ├── capacitor.config.json
+│   ├── package.json
+│   ├── resources/            # 原生图标 / 启动图
+│   └── scripts/sync-web.js   # 把前端复制进原生 www
+├── .github/workflows/        # GitHub Actions 构建 APK
 └── tests/
     ├── core.test.js          # 数据层测试
     └── sync.test.js          # 冲突合并测试
 ```
+
+## 原生 App
+
+`native/` 使用 Capacitor 复用现有前端，不维护第二套界面。完整构建步骤见 [native/README.md](native/README.md)。
+
+最省事的方式是 GitHub Actions：
+
+1. 把 `native/` 和 `.github/workflows/android.yml` 提交到仓库。
+2. 打开仓库 **Actions → Build Android APK → Run workflow**。
+3. 构建完成后下载 **yuzizhang-android-debug** artifact，得到可 sideload 的 debug APK。
+
+本地构建需要 JDK 21 + Android Studio/SDK；iOS 需要 macOS + Xcode。原生 WebView 的 localStorage 与浏览器隔离，首次使用请从网页版导出 JSON 再导入原生 App。Android 默认 origin 是 `https://localhost`，iOS 是 `capacitor://localhost`，云同步后端已把这些 origin 加入默认 CORS 白名单。
 
 ## 测试
 

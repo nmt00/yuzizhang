@@ -1,0 +1,31 @@
+{
+  "name": "yuzizhang-native",
+  "version": "1.4.1",
+  "private": true,
+  "description": "玉子账 Capacitor 原生壳（Android / iOS）",
+  "scripts": {
+    "prepare:web": "node scripts/sync-web.js",
+    "add:android": "npm run prepare:web && cap add android",
+    "add:ios": "npm run prepare:web && cap add ios",
+    "sync": "npm run prepare:web && cap sync",
+    "sync:android": "npm run prepare:web && cap sync android",
+    "sync:ios": "npm run prepare:web && cap sync ios",
+    "open:android": "cap open android",
+    "open:ios": "cap open ios",
+    "build:android": "cd android && gradlew.bat assembleDebug",
+    "build:android:release": "cd android && gradlew.bat assembleRelease",
+    "assets:android": "capacitor-assets generate --android",
+    "assets:ios": "capacitor-assets generate --ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/ios": "^7.0.0",
+    "@capacitor/share": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^2.0.0",
+    "@capacitor/cli": "^7.0.0"
+  }
+}
